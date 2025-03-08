@@ -27,13 +27,21 @@ let addbinding ctx x bind = (x, bind) :: ctx
 let getbinding ctx x = List.assoc x ctx
 
 (* TYPE MANAGEMENT (TYPING) *)
-
-let rec string_of_ty ty =
-  match ty with
-  | TyBool -> "Bool"
+let rec string_of_ty t =
+  let rec string_of_ty_parens t =
+    match t with
+    | TyArr (v1, v2) -> "(" ^ string_of_ty_parens v1 ^ " -> " ^ string_of_ty v2 ^ ")"
+    | _ -> string_of_ty t
+  in
+  let string_of_ty_no_parens t =
+    match t with
+    | TyArr (v1, v2) -> string_of_ty_parens v1 ^ " -> " ^ string_of_ty v2
+    | _ -> string_of_ty t
+  in
+  match t with
   | TyNat -> "Nat"
-  | TyArr (ty1, ty2) ->
-    "(" ^ string_of_ty ty1 ^ ")" ^ " -> " ^ "(" ^ string_of_ty ty2 ^ ")"
+  | TyBool -> "Bool"
+  | TyArr (_, _) -> string_of_ty_no_parens t
 ;;
 
 exception Type_error of string
@@ -89,39 +97,58 @@ let rec typeof ctx tm =
 
 (* TERMS MANAGEMENT (EVALUATION) *)
 
-let rec string_of_term = function
-  | TmTrue -> "true"
-  | TmFalse -> "false"
-  | TmIf (t1, t2, t3) ->
-    "if "
-    ^ "("
-    ^ string_of_term t1
-    ^ ")"
-    ^ " then "
-    ^ "("
-    ^ string_of_term t2
-    ^ ")"
-    ^ " else "
-    ^ "("
-    ^ string_of_term t3
-    ^ ")"
-  | TmZero -> "0"
-  | TmSucc t ->
-    let rec f n t' =
-      match t' with
-      | TmZero -> string_of_int n
-      | TmSucc s -> f (n + 1) s
-      | _ -> "succ " ^ "(" ^ string_of_term t ^ ")"
+let string_of_term t =
+  let lambda = "λ" in
+  let show_types_in_lambdas = false in
+  let rec do_string_of_term t =
+    let string_of_if t1 t2 t3 =
+      "if "
+      ^ do_string_of_term t1
+      ^ " then "
+      ^ do_string_of_term t2
+      ^ " else "
+      ^ do_string_of_term t3
     in
-    f 1 t
-  | TmPred t -> "pred " ^ "(" ^ string_of_term t ^ ")"
-  | TmIsZero t -> "iszero " ^ "(" ^ string_of_term t ^ ")"
-  | TmVar s -> s
-  | TmAbs (s, tyS, t) ->
-    "(lambda " ^ s ^ ":" ^ string_of_ty tyS ^ ". " ^ string_of_term t ^ ")"
-  | TmApp (t1, t2) -> "(" ^ string_of_term t1 ^ " " ^ string_of_term t2 ^ ")"
-  | TmLetIn (s, t1, t2) ->
-    "let " ^ s ^ " = " ^ string_of_term t1 ^ " in " ^ string_of_term t2
+    let string_of_succ t =
+      let rec f n t' =
+        match t' with
+        | TmZero -> string_of_int n
+        | TmSucc s -> f (n + 1) s
+        | TmPred s -> f n s
+        | _ -> "succ " ^ "(" ^ do_string_of_term t ^ ")"
+      in
+      f 1 t
+    in
+    let string_of_term_parens t =
+      match t with
+      | TmApp (t1, t2) -> "(" ^ do_string_of_term t1 ^ " " ^ do_string_of_term t2 ^ ")"
+      | _ -> do_string_of_term t
+    in
+    let string_of_term_no_parens t =
+      match t with
+      | TmApp (t1, t2) -> string_of_term_parens t1 ^ " " ^ string_of_term_parens t2
+      | _ -> do_string_of_term t
+    in
+    match t with
+    | TmTrue -> "true"
+    | TmFalse -> "false"
+    | TmIf (t1, t2, t3) -> string_of_if t1 t2 t3
+    | TmZero -> "0"
+    | TmSucc t -> string_of_succ t
+    | TmPred t -> "pred " ^ "(" ^ do_string_of_term t ^ ")"
+    | TmIsZero t -> "iszero " ^ "(" ^ do_string_of_term t ^ ")"
+    | TmVar s -> s
+    | TmAbs (s, tyS, t) ->
+      lambda
+      ^ s
+      ^ (if show_types_in_lambdas then ": " ^ string_of_ty tyS else "")
+      ^ ". "
+      ^ do_string_of_term t
+    | TmApp (_, _) -> string_of_term_no_parens t
+    | TmLetIn (s, t1, t2) ->
+      "let " ^ s ^ " = " ^ do_string_of_term t1 ^ " in " ^ do_string_of_term t2
+  in
+  do_string_of_term t ^ ";"
 ;;
 
 let rec ldif l1 l2 =
